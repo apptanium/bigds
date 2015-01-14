@@ -18,7 +18,7 @@ public class BigDSFrameworkTests {
 
   @BeforeClass
   public static void setupDatastoreServiceFactory() throws IOException {
-    DatastoreServiceFactory.initialize(2, new Configuration());
+    DatastoreServiceFactory.initialize("BigDSFrameworkTests", 2, new Configuration());
     System.out.println("initialized DSF!");
   }
 

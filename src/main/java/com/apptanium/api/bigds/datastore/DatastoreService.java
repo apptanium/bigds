@@ -3,7 +3,6 @@ package com.apptanium.api.bigds.datastore;
 import com.apptanium.api.bigds.entity.Entity;
 import com.apptanium.api.bigds.entity.Key;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +25,8 @@ public interface DatastoreService {
   public void delete(Iterable<Key> keys);
 
   public void delete(Key... keys);
+
+  String getNamespace();
 
   public List<Index> getIndexes();
 

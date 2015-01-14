@@ -3,14 +3,10 @@ package com.apptanium.api.bigds;
 import com.apptanium.api.bigds.datastore.DatastoreService;
 import com.apptanium.api.bigds.datastore.DatastoreServiceFactory;
 import com.apptanium.api.bigds.entity.*;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;

@@ -1,15 +1,12 @@
 package com.apptanium.api.bigds.datastore;
 
 import com.apptanium.api.bigds.entity.*;
-import org.apache.commons.httpclient.methods.EntityEnclosingMethod;
-import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.*;
 import java.util.logging.Logger;
@@ -26,16 +23,18 @@ class DatastoreServiceImpl implements DatastoreService {
   private static final byte[] PROPERTIES_COLUMN_FAMILY_BYTES = PROPERTIES_COLUMN_FAMILY.getBytes(CHARSET);
   private static final String METADATA_COLUMN_FAMILY = "m";
   private static final byte[] METADATA_COLUMN_FAMILY_BYTES = METADATA_COLUMN_FAMILY.getBytes(CHARSET);
+  private final String namespace;
   private final Connection connection;
 
-  DatastoreServiceImpl(Connection connection) {
+  DatastoreServiceImpl(String namespace, Connection connection) {
+    this.namespace = namespace;
     this.connection = connection;
   }
 
   @Override
   public Key put(Entity entity) {
     final String kind = entity.getKey().getKind();
-    final TableName tableName = TableName.valueOf(kind);
+    final TableName tableName = TableName.valueOf(namespace, kind);
 
     Admin admin = null;
     try {
@@ -67,7 +66,7 @@ class DatastoreServiceImpl implements DatastoreService {
 
   private Key put(Entity entity, PutContext context) throws IOException {
     final String kind = entity.getKey().getKind();
-    final TableName tableName = TableName.valueOf(kind);
+    final TableName tableName = TableName.valueOf(namespace, kind);
     if(!context.kinds.contains(tableName)) {
       try {
         if(!context.admin.tableExists(tableName)) {
@@ -124,12 +123,6 @@ class DatastoreServiceImpl implements DatastoreService {
     return keys;
   }
 
-/*
-  @Override
-  public List<Key> put(Entity... entities) {
-    return put(Arrays.asList(entities));
-  }
-*/
 
   @Override
   public Map<Key, Entity> get(Iterable<Key> keys) {
@@ -142,7 +135,7 @@ class DatastoreServiceImpl implements DatastoreService {
     }
     Map<Key,Entity> results = new HashMap<>();
     for (Key key : keys) {
-      final TableName tableName = TableName.valueOf(key.getKind());
+      final TableName tableName = TableName.valueOf(namespace, key.getKind());
       if(context.absent.contains(tableName)) {
         continue;
       }
@@ -201,7 +194,7 @@ class DatastoreServiceImpl implements DatastoreService {
 
   @Override
   public Entity get(Key key) {
-    final TableName tableName = TableName.valueOf(key.getKind());
+    final TableName tableName = TableName.valueOf(namespace, key.getKind());
     Admin admin = null;
     try {
       admin = connection.getAdmin();
@@ -232,6 +225,11 @@ class DatastoreServiceImpl implements DatastoreService {
   @Override
   public void delete(Key... keys) {
 
+  }
+
+  @Override
+  public String getNamespace() {
+    return namespace;
   }
 
   @Override
