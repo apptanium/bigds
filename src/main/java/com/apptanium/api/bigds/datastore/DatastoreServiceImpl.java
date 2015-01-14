@@ -24,6 +24,8 @@ class DatastoreServiceImpl implements DatastoreService {
   private static final Charset CHARSET = Charset.forName("UTF-8");
   private static final String PROPERTIES_COLUMN_FAMILY = "p";
   private static final byte[] PROPERTIES_COLUMN_FAMILY_BYTES = PROPERTIES_COLUMN_FAMILY.getBytes(CHARSET);
+  private static final String METADATA_COLUMN_FAMILY = "m";
+  private static final byte[] METADATA_COLUMN_FAMILY_BYTES = METADATA_COLUMN_FAMILY.getBytes(CHARSET);
   private final Connection connection;
 
   DatastoreServiceImpl(Connection connection) {
@@ -47,6 +49,7 @@ class DatastoreServiceImpl implements DatastoreService {
       if(!admin.tableExists(tableName)) {
         HTableDescriptor descriptor = new HTableDescriptor(tableName);
         descriptor.addFamily(new HColumnDescriptor(PROPERTIES_COLUMN_FAMILY));
+        descriptor.addFamily(new HColumnDescriptor(METADATA_COLUMN_FAMILY));
         admin.createTable(descriptor);
       }
     }
@@ -70,6 +73,7 @@ class DatastoreServiceImpl implements DatastoreService {
         if(!context.admin.tableExists(tableName)) {
           HTableDescriptor descriptor = new HTableDescriptor(tableName);
           descriptor.addFamily(new HColumnDescriptor(PROPERTIES_COLUMN_FAMILY));
+          descriptor.addFamily(new HColumnDescriptor(METADATA_COLUMN_FAMILY));
           context.admin.createTable(descriptor);
         }
         context.kinds.add(tableName);
@@ -88,11 +92,10 @@ class DatastoreServiceImpl implements DatastoreService {
       PropertyMap.Value propertyValue = entity.getValue(propertyKey);
       ValueConverter converter = EntityUtils.getValueConverter(propertyValue.getValueClass());
       byte[] valueBytes = converter.convertToStorage(propertyValue.getValue());
-      ByteBuffer buffer = ByteBuffer.allocate(valueBytes.length + 2);
-      buffer.put(converter.getPrefix());
-      buffer.put((byte) (converter.isIndexable() ? (propertyValue.isIndexed() ? 1: 0 ) : 0));
-      buffer.put(valueBytes);
-      row.add(PROPERTIES_COLUMN_FAMILY_BYTES, propertyKey.getBytes(CHARSET), buffer.array());
+      byte[] metadataBytes = new byte[]{converter.getPrefix(),
+                                        (byte) (converter.isIndexable() ? (propertyValue.isIndexed() ? 1: 0 ) : 0)};
+      row.add(PROPERTIES_COLUMN_FAMILY_BYTES, propertyKey.getBytes(CHARSET), valueBytes);
+      row.add(METADATA_COLUMN_FAMILY_BYTES, propertyKey.getBytes(CHARSET), metadataBytes);
     }
 
     table.put(row);
@@ -175,24 +178,25 @@ class DatastoreServiceImpl implements DatastoreService {
 
   private Entity getEntityFromTable(Key key, Table table) {
     try {
-      Result result = table.get(new Get(key.getRowId()).addFamily(PROPERTIES_COLUMN_FAMILY_BYTES));
+      Result result = table.get(new Get(key.getRowId()).addFamily(PROPERTIES_COLUMN_FAMILY_BYTES).addFamily(METADATA_COLUMN_FAMILY_BYTES));
       if(result.isEmpty()) {
         return null;
       }
       Map<byte[], byte[]> map = result.getFamilyMap(PROPERTIES_COLUMN_FAMILY_BYTES);
+      Map<byte[], byte[]> md = result.getFamilyMap(METADATA_COLUMN_FAMILY_BYTES);
       Entity entity = new Entity(key);
       for (Map.Entry<byte[], byte[]> entry : map.entrySet()) {
         String propertyName = new String(entry.getKey(), CHARSET);
-        ValueConverter converter = EntityUtils.getValueConverter(entry.getValue()[0]);
-        byte[] rawValue = entry.getValue();
-        Object propertyValue = converter.convertFromStorage(ByteBuffer.wrap(rawValue, 2, rawValue.length - 2).array());
-        entity.put(propertyName, propertyValue, ((int)rawValue[1])==1);
+        byte[] mdBytes = md.get(entry.getKey());
+        ValueConverter converter = EntityUtils.getValueConverter(mdBytes[0]);
+        Object propertyValue = converter.convertFromStorage(entry.getValue());
+        entity.put(propertyName, propertyValue, mdBytes[1]==1);
       }
+      return entity;
     }
     catch (IOException e) {
       throw new DatastoreException(DatastoreExceptionCode.ErrorRetrievingEntity, e);
     }
-    return null;
   }
 
   @Override

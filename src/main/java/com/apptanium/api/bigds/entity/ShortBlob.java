@@ -1,6 +1,7 @@
 package com.apptanium.api.bigds.entity;
 
 import java.io.Serializable;
+import java.util.Arrays;
 
 /**
  * @author sgupta
@@ -20,5 +21,28 @@ public class ShortBlob implements Serializable {
 
   public byte[] getValue() {
     return value;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    ShortBlob shortBlob = (ShortBlob) o;
+
+    if (!Arrays.equals(value, shortBlob.value)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(value);
   }
 }

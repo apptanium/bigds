@@ -20,4 +20,14 @@ public final class Entity extends PropertyMap {
     return key;
   }
 
+
+  @Override
+  public int hashCode() {
+    return key.hashCode();
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    return obj == this || !(obj == null || !(obj instanceof Entity)) && ((Entity) obj).getKey().equals(key);
+  }
 }

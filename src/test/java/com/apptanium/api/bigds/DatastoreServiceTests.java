@@ -2,6 +2,7 @@ package com.apptanium.api.bigds;
 
 import com.apptanium.api.bigds.datastore.DatastoreService;
 import com.apptanium.api.bigds.datastore.DatastoreServiceFactory;
+import com.apptanium.api.bigds.entity.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -13,7 +14,9 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Arrays;
+import java.util.Date;
 
 /**
  * @author sgupta
@@ -51,6 +54,34 @@ public class DatastoreServiceTests {
     for (HTableDescriptor descriptor : descriptors) {
       System.out.println("descriptor.name = " + descriptor.getNameAsString());
       System.out.println("descriptor.tableName = " + descriptor.getTableName());
+    }
+
+  }
+
+  @Test
+  public void entityStorageRetrievalTest() throws IOException {
+    String id = Long.toString(System.currentTimeMillis(), 36);
+    Entity entity = new Entity(new Key(null, "Person", id));
+    entity.put("firstName", "Saurabh");
+    entity.put("lastName", "Gupta");
+    entity.put("number", 123456L);
+    entity.put("isGood", true);
+    entity.put("intro", new Text("this is a very large piece of text that goes on and on and doesn't stop and all that sort of thing"));
+    entity.put("now", new Date());
+    entity.put("blob", new Blob("BLOB::abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes(Charset.forName("UTF-8"))));
+    entity.put("shortBlob", new ShortBlob("shortblob_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes(Charset.forName("UTF-8"))));
+    entity.put("testkey", entity.getKey());
+
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    Key key = datastoreService.put(entity);
+
+    Entity result = datastoreService.get(key);
+
+    assert result.getKey().equals(entity.getKey());
+    for (String property : entity.getPropertyKeys()) {
+      System.out.println("result.get(property) = " + result.get(property));
+      assert result.get(property).equals(entity.get(property));
     }
 
   }

@@ -13,7 +13,7 @@ import java.util.*;
  */
 public abstract class PropertyMap implements Serializable {
 
-  protected final Map<String,Value<? extends Serializable>> map;
+  protected final Map<String,Value<?>> map;
 
   protected PropertyMap() {
     map = new HashMap<>();
@@ -24,11 +24,11 @@ public abstract class PropertyMap implements Serializable {
    * @param key
    * @param value
    */
-  public void put(String key, Serializable value) {
+  public void put(String key, Object value) {
     put(key, value, true);
   }
 
-  public <T extends Serializable> void put(@Nonnull String key, @Nonnull T value, boolean indexed) {
+  public <T> void put(@Nonnull String key, @Nonnull T value, boolean indexed) {
     if(EntityUtils.isApprovedClass(value.getClass())) {
       map.put(key, new Value<T>(value, indexed, (Class<T>) value.getClass()));
     }
