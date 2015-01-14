@@ -80,6 +80,11 @@ public class DatastoreServiceTests {
       assert result.get(property).equals(entity.get(property));
     }
 
+    datastoreService.delete(key);
+
+    Entity deletedResult = datastoreService.get(key);
+    assert deletedResult == null;
+
   }
 
 

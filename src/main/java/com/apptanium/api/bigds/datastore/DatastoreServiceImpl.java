@@ -9,6 +9,7 @@ import org.apache.hadoop.hbase.client.*;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -158,14 +159,7 @@ class DatastoreServiceImpl implements DatastoreService {
         }
       }
     }
-    for (Map.Entry<TableName, Table> entry : context.present.entrySet()) {
-      try {
-        entry.getValue().close();
-      }
-      catch (IOException e) {
-        //each entry has to be tried to be closed
-      }
-    }
+    context.close();
     return results;
   }
 
@@ -219,12 +213,49 @@ class DatastoreServiceImpl implements DatastoreService {
 
   @Override
   public void delete(Iterable<Key> keys) {
+    GetContext context =  new GetContext(null); //admin not needed
+    for (Key key : keys) {
+      final TableName tableName = TableName.valueOf(namespace, key.getKind());
+      if (context.absent.contains(tableName)) {
+        continue;
+      }
+      Table table = context.present.get(tableName);
+      if (table == null) {
+        try {
+          table = connection.getTable(tableName);
+          context.present.put(tableName, table);
+        }
+        catch (IOException e) {
+          context.absent.add(tableName);
+          continue;
+        }
+      }
+      if(table != null) {
+        try {
+          table.delete(new Delete(key.getRowId()));
+        }
+        catch (IOException e) {
+          //most likely that table was not found, or key doesn't exist; no harm done :)
+          LOGGER.log(Level.INFO, e.getLocalizedMessage(), e);
+        }
+      }
+    }
+    context.close();
 
   }
 
   @Override
-  public void delete(Key... keys) {
-
+  public void delete(Key key) {
+    TableName tableName = TableName.valueOf(namespace, key.getKind());
+    try {
+      Table table = connection.getTable(tableName);
+      table.delete(new Delete(key.getRowId()));
+      table.close();
+    }
+    catch (IOException e) {
+      //most likely that table was not found, or key doesn't exist; no harm done :)
+      LOGGER.log(Level.INFO, e.getLocalizedMessage(), e);
+    }
   }
 
   @Override
@@ -253,6 +284,17 @@ class DatastoreServiceImpl implements DatastoreService {
 
     private GetContext(Admin admin) {
       this.admin = admin;
+    }
+
+    private void close() {
+      for (Map.Entry<TableName, Table> entry : present.entrySet()) {
+        try {
+          entry.getValue().close();
+        }
+        catch (IOException e) {
+          //each entry has to be tried to be closed
+        }
+      }
     }
   }
 }

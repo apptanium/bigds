@@ -24,7 +24,7 @@ public interface DatastoreService {
 
   public void delete(Iterable<Key> keys);
 
-  public void delete(Key... keys);
+  public void delete(Key key);
 
   String getNamespace();
 
