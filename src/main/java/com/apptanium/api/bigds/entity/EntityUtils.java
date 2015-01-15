@@ -3,17 +3,12 @@ package com.apptanium.api.bigds.entity;
 import com.sun.xml.internal.messaging.saaj.util.ByteInputStream;
 import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream;
 
-import javax.security.auth.kerberos.KerberosTicket;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -62,6 +57,9 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToStorage(String value) {
+      if(value.length() > 256) {
+        throw new UnacceptableValueException("String values cannot be more than 256 chars in length; use Text for long strings");
+      }
       return value.getBytes(CHARSET);
     }
 
@@ -72,7 +70,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, String value) {
-      return new byte[0];
+      return (column+"="+value+"/"+key.getId()).getBytes(CHARSET);
     }
 
     @Override
@@ -108,8 +106,18 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Long value) {
-
-      return new byte[0];
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Long.BYTES);
+        valueBuffer.putLong(value);
+        buffer.write(valueBuffer.array());
+        buffer.write(("/"+key.getId()).getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Long", e);
+      }
     }
 
     @Override
@@ -145,7 +153,18 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Double value) {
-      return new byte[0];
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Double.BYTES);
+        valueBuffer.putDouble(value);
+        buffer.write(valueBuffer.array());
+        buffer.write(("/"+key.getId()).getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Double", e);
+      }
     }
 
     @Override
@@ -176,7 +195,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Boolean value) {
-      return new byte[0];
+      return (column+"="+(value?1:0)+"/"+key.getId()).getBytes(CHARSET);
     }
 
     @Override
@@ -212,7 +231,18 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Date value) {
-      return new byte[0];
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Long.BYTES);
+        valueBuffer.putLong(value.getTime());
+        buffer.write(valueBuffer.array());
+        buffer.write(("/"+key.getId()).getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Date", e);
+      }
     }
 
     @Override
@@ -243,7 +273,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Text value) {
-      return new byte[0];
+      return null;
     }
 
     @Override
@@ -264,6 +294,9 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToStorage(ShortBlob value) {
+      if(value.getValue().length > 256) {
+        throw new UnacceptableValueException("String values cannot be more than 256 chars in length; use Text for long strings");
+      }
       return value.getValue();
     }
 
@@ -274,7 +307,16 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, ShortBlob value) {
-      return new byte[0];
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column + "=").getBytes(CHARSET));
+        buffer.write(value.getValue());
+        buffer.write(("/"+key.getId()).getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from ShortBlob", e);
+      }
     }
 
     @Override
@@ -305,7 +347,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Blob value) {
-      return new byte[0];
+      return null;
     }
 
     @Override
@@ -336,7 +378,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, Key value) {
-      return new byte[0];
+      return (column+"="+Key.createString(value, false)+"/"+key.getId()).getBytes(CHARSET);
     }
 
     @Override
@@ -382,7 +424,7 @@ public class EntityUtils {
 
     @Override
     public byte[] convertToIndexedRowId(Key key, String column, EmbeddedMap value) {
-      return new byte[0];
+      return null;
     }
 
     @Override

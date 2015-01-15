@@ -3,10 +3,12 @@ package com.apptanium.api.bigds;
 import com.apptanium.api.bigds.datastore.DatastoreService;
 import com.apptanium.api.bigds.datastore.DatastoreServiceFactory;
 import com.apptanium.api.bigds.entity.*;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.client.*;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -80,12 +82,37 @@ public class DatastoreServiceTests {
       assert result.get(property).equals(entity.get(property));
     }
 
+    Configuration configuration = HBaseConfiguration.create();
+    Connection connection = ConnectionFactory.createConnection(configuration);
+    TableName personIndexTableName = TableName.valueOf(datastoreService.getNamespace(), "_" + entity.getKey().getKind());
+    Table personIndexTable = connection.getTable(personIndexTableName);
+    assert personIndexTable.getName().equals(personIndexTableName);
+    ValueConverter converter = EntityUtils.getValueConverter(Boolean.class);
+    Result indexResult = personIndexTable.get(new Get(converter.convertToIndexedRowId(entity.getKey(), "isGood", entity.get("isGood"))));
+    assert indexResult != null;
+    assert !indexResult.isEmpty();
+
+    converter = EntityUtils.getValueConverter(String.class);
+    indexResult = personIndexTable.get(new Get(converter.convertToIndexedRowId(entity.getKey(), "lastName", entity.get("lastName"))));
+    assert indexResult != null;
+    assert !indexResult.isEmpty();
+
+
     datastoreService.delete(key);
 
     Entity deletedResult = datastoreService.get(key);
     assert deletedResult == null;
 
+    indexResult = personIndexTable.get(new Get(converter.convertToIndexedRowId(entity.getKey(), "lastName", entity.get("lastName"))));
+    assert indexResult != null;
+    assert indexResult.isEmpty();
+
+    personIndexTable.close();
+
   }
+
+  //todo: create tests for queries
+
 
 
 }
