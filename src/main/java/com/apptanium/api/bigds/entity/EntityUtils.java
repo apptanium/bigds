@@ -6,9 +6,11 @@ import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.security.SecureRandom;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.logging.Logger;
 
 /**
@@ -17,6 +19,8 @@ import java.util.logging.Logger;
  */
 public class EntityUtils {
   public static final Logger LOGGER = Logger.getLogger(EntityUtils.class.getName());
+  private static final Random RANDOM = new SecureRandom();
+  private static final char[] ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
   private static final Charset CHARSET = Charset.forName("UTF-8");
   private static final HashMap<Class<? extends Serializable>, ValueConverter<?>> acceptableValueClasses = new HashMap<>();
   private static final HashMap<Byte, ValueConverter<?>> converterLookup = new HashMap<>();
@@ -49,6 +53,13 @@ public class EntityUtils {
     return converterLookup.get(type);
   }
 
+  public static String generateId() {
+    char[] suffix = new char[8];
+    for (int i = 0; i < suffix.length; i++) {
+      suffix[i] = ID_CHARS[RANDOM.nextInt(ID_CHARS.length)];
+    }
+    return Long.toString(System.currentTimeMillis(), 36) + new String(suffix);
+  }
 
   /**
    *
@@ -81,6 +92,11 @@ public class EntityUtils {
     @Override
     public Byte getPrefix() {
       return (byte) 'S';
+    }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, String value) {
+      return (column+"="+value+"/").getBytes(CHARSET);
     }
   }
 
@@ -129,6 +145,22 @@ public class EntityUtils {
     public Byte getPrefix() {
       return (byte) 'L';
     }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Long value) {
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Long.BYTES);
+        valueBuffer.putLong(value);
+        buffer.write(valueBuffer.array());
+        buffer.write(("/").getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Long", e);
+      }
+    }
   }
 
   /**
@@ -176,6 +208,22 @@ public class EntityUtils {
     public Byte getPrefix() {
       return (byte) 'D';
     }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Double value) {
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Double.BYTES);
+        valueBuffer.putDouble(value);
+        buffer.write(valueBuffer.array());
+        buffer.write(("/").getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Double", e);
+      }
+    }
   }
 
   /**
@@ -206,6 +254,11 @@ public class EntityUtils {
     @Override
     public Byte getPrefix() {
       return (byte) 'B';
+    }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Boolean value) {
+      return (column+"="+(value?1:0)+"/").getBytes(CHARSET);
     }
   }
 
@@ -254,6 +307,22 @@ public class EntityUtils {
     public Byte getPrefix() {
       return (byte) 'A';
     }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Date value) {
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column+"=").getBytes(CHARSET));
+        ByteBuffer valueBuffer = ByteBuffer.allocate(Long.BYTES);
+        valueBuffer.putLong(value.getTime());
+        buffer.write(valueBuffer.array());
+        buffer.write(("/").getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from Date", e);
+      }
+    }
   }
 
   /**
@@ -284,6 +353,11 @@ public class EntityUtils {
     @Override
     public Byte getPrefix() {
       return (byte) 'T';
+    }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Text value) {
+      return null;
     }
   }
 
@@ -328,6 +402,20 @@ public class EntityUtils {
     public Byte getPrefix() {
       return (byte) 'H';
     }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, ShortBlob value) {
+      ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+      try {
+        buffer.write((column + "=").getBytes(CHARSET));
+        buffer.write(value.getValue());
+        buffer.write(("/").getBytes(CHARSET));
+        return buffer.toByteArray();
+      }
+      catch (IOException e) {
+        throw new UnacceptableValueException("error while generating indexed row id from ShortBlob", e);
+      }
+    }
   }
 
   /**
@@ -359,6 +447,11 @@ public class EntityUtils {
     public Byte getPrefix() {
       return (byte) 'Z';
     }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Blob value) {
+      return null;
+    }
   }
 
   /**
@@ -383,12 +476,17 @@ public class EntityUtils {
 
     @Override
     public boolean isIndexable() {
-      return false;
+      return true;
     }
 
     @Override
     public Byte getPrefix() {
       return (byte) 'K';
+    }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, Key value) {
+      return (column+"="+Key.createString(value, false)+"/").getBytes(CHARSET);
     }
   }
 
@@ -435,6 +533,11 @@ public class EntityUtils {
     @Override
     public Byte getPrefix() {
       return (byte) 'E';
+    }
+
+    @Override
+    public byte[] convertToRowPrefixId(String column, EmbeddedMap value) {
+      return null;
     }
   }
 

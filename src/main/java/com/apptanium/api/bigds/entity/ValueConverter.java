@@ -15,4 +15,6 @@ public interface ValueConverter<T> {
   public boolean isIndexable();
 
   public Byte getPrefix();
+
+  public byte[] convertToRowPrefixId(String column, T value);
 }

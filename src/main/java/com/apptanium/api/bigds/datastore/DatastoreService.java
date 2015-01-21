@@ -30,4 +30,6 @@ public interface DatastoreService {
 
   public List<Index> getIndexes();
 
+  public CompiledQuery compile(Query query);
+
 }

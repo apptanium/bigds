@@ -9,7 +9,6 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -19,24 +18,8 @@ import java.util.logging.Logger;
  * @author sgupta
  * @since 1/10/15.
  */
-class DatastoreServiceImpl implements DatastoreService {
+class DatastoreServiceImpl implements DatastoreService, DatastoreConstants {
   private static final Logger LOGGER = Logger.getLogger(DatastoreServiceImpl.class.getName());
-  private static final Charset CHARSET = Charset.forName("UTF-8");
-  private static final String PROPERTIES_COLUMN_FAMILY = "p";
-  private static final byte[] PROPERTIES_COLUMN_FAMILY_BYTES = PROPERTIES_COLUMN_FAMILY.getBytes(CHARSET);
-  private static final String METADATA_COLUMN_FAMILY = "m";
-  private static final byte[] METADATA_COLUMN_FAMILY_BYTES = METADATA_COLUMN_FAMILY.getBytes(CHARSET);
-
-  /**
-   * this column in the metadata column family stores the set of index row ids
-   */
-  private static final byte[] METADATA_INDEX_COLUMN_BYTES = "_".getBytes(CHARSET);
-
-  /**
-   * used for storing indexes; not for use in the primary object table, but used in the index table
-   */
-  private static final String ID_COLUMN_FAMILY = "i";
-  private static final byte[] ID_COLUMN_FAMILY_BYTES = ID_COLUMN_FAMILY.getBytes(CHARSET);
 
   private final String namespace;
   private final Connection connection;
@@ -144,9 +127,13 @@ class DatastoreServiceImpl implements DatastoreService {
       indexTable.delete(indexesToDelete);
     }
     List<Put> indexesToAdd = new LinkedList<>();
+    Key parent = entity.getKey().getParent();
+    byte[] parentBytes = (parent == null ? new byte[]{0} : Key.createString(parent, false).getBytes(CHARSET));
     for (Map.Entry<byte[], Boolean> entry : newIndexRows.entrySet()) {
       if(entry.getValue()) {
-        indexesToAdd.add(new Put(entry.getKey()).add(ID_COLUMN_FAMILY_BYTES, "key".getBytes(CHARSET), new byte[]{1}));
+        indexesToAdd.add(new Put(entry.getKey()).add(ID_COLUMN_FAMILY_BYTES,
+                                                     ID_COLUMN_KEY_BYTES,
+                                                     parentBytes));
       }
     }
     if(indexesToAdd.size() > 0) {
@@ -223,17 +210,7 @@ class DatastoreServiceImpl implements DatastoreService {
       if(result.isEmpty()) {
         return null;
       }
-      Map<byte[], byte[]> map = result.getFamilyMap(PROPERTIES_COLUMN_FAMILY_BYTES);
-      Map<byte[], byte[]> md = result.getFamilyMap(METADATA_COLUMN_FAMILY_BYTES);
-      Entity entity = new Entity(key);
-      for (Map.Entry<byte[], byte[]> entry : map.entrySet()) {
-        String propertyName = new String(entry.getKey(), CHARSET);
-        byte[] mdBytes = md.get(entry.getKey());
-        ValueConverter converter = EntityUtils.getValueConverter(mdBytes[0]);
-        Object propertyValue = converter.convertFromStorage(entry.getValue());
-        entity.put(propertyName, propertyValue, mdBytes[1]==1);
-      }
-      return entity;
+      return DatastoreUtils.createEntity(result, key);
     }
     catch (IOException e) {
       throw new DatastoreException(DatastoreExceptionCode.ErrorRetrievingEntity, e);
@@ -278,28 +255,28 @@ class DatastoreServiceImpl implements DatastoreService {
         try {
           Table table = connection.getTable(tableName);
           Table indexTable = connection.getTable(TableName.valueOf(namespace, "_" + tableName.getQualifierAsString()));
-          context.tablePairs.put(tableName, new Table[]{table,indexTable});
+          tables = new Table[]{table,indexTable};
+          context.tablePairs.put(tableName, tables);
         }
         catch (IOException e) {
           context.absent.add(tableName);
           continue;
         }
       }
-      if(tables != null) {
-        try {
-          Result currIndexResult = tables[0].get(new Get(key.getRowId()).addColumn(METADATA_COLUMN_FAMILY_BYTES, METADATA_INDEX_COLUMN_BYTES));
-          byte[] indexData = currIndexResult.getValue(METADATA_COLUMN_FAMILY_BYTES, METADATA_INDEX_COLUMN_BYTES);
-          Set<byte[]> currIndexRows = (Set<byte[]>) SerializationUtils.deserialize(indexData);
+      //tables is always non null here
+      try {
+        Result currIndexResult = tables[0].get(new Get(key.getRowId()).addColumn(METADATA_COLUMN_FAMILY_BYTES, METADATA_INDEX_COLUMN_BYTES));
+        byte[] indexData = currIndexResult.getValue(METADATA_COLUMN_FAMILY_BYTES, METADATA_INDEX_COLUMN_BYTES);
+        Set<byte[]> currIndexRows = (Set<byte[]>) SerializationUtils.deserialize(indexData);
 
-          for (byte[] currIndexRow : currIndexRows) {
-            tables[1].delete(new Delete(currIndexRow));
-          }
-          tables[0].delete(new Delete(key.getRowId()));
+        for (byte[] currIndexRow : currIndexRows) {
+          tables[1].delete(new Delete(currIndexRow));
         }
-        catch (IOException e) {
-          //most likely that table was not found, or key doesn't exist; no harm done :)
-          LOGGER.log(Level.INFO, e.getLocalizedMessage(), e);
-        }
+        tables[0].delete(new Delete(key.getRowId()));
+      }
+      catch (IOException e) {
+        //most likely that table was not found, or key doesn't exist; no harm done :)
+        LOGGER.log(Level.INFO, e.getLocalizedMessage(), e);
       }
     }
     context.close();
@@ -339,6 +316,11 @@ class DatastoreServiceImpl implements DatastoreService {
   @Override
   public List<Index> getIndexes() {
     throw new NotImplementedException("not implemented");
+  }
+
+  @Override
+  public CompiledQuery compile(Query query) {
+    return new CompiledQuery(this, namespace, connection, query);
   }
 
   /**

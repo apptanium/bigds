@@ -6,6 +6,7 @@ package com.apptanium.api.bigds.datastore;
  */
 public enum DatastoreExceptionCode {
   InvalidEntityKey("Entity key is null or invalid"),
+  InvalidQueryParameter("Invalid Query Parameter"),
   ErrorAdminNotObtained("Could not access admin interface"),
   ErrorPersistingEntity("Could not persist entity"),
   ErrorCreatingTable("Could not create table"),
