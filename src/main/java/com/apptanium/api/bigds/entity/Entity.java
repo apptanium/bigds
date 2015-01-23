@@ -1,8 +1,5 @@
 package com.apptanium.api.bigds.entity;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * @author sgupta
  *
@@ -29,5 +26,14 @@ public final class Entity extends PropertyMap {
   @Override
   public boolean equals(Object obj) {
     return obj == this || !(obj == null || !(obj instanceof Entity)) && ((Entity) obj).getKey().equals(key);
+  }
+
+  @Override
+  public String toString() {
+    final StringBuilder sb = new StringBuilder("Entity{");
+    sb.append("key=").append(key);
+    sb.append(",properties=").append(map);
+    sb.append('}');
+    return sb.toString();
   }
 }

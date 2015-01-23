@@ -1,11 +1,10 @@
 package com.apptanium.api.bigds.entity;
 
-import javafx.scene.control.DateCell;
-import org.apache.hadoop.hbase.client.Table;
-
 import javax.annotation.Nonnull;
 import java.io.Serializable;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * @author sgupta
@@ -75,6 +74,16 @@ public abstract class PropertyMap implements Serializable {
 
     public Class<T> getValueClass() {
       return valueClass;
+    }
+
+    @Override
+    public String toString() {
+      final StringBuilder sb = new StringBuilder("Value{");
+      sb.append("value=").append(value);
+      sb.append(", indexed=").append(indexed);
+      sb.append(", valueClass=").append(valueClass);
+      sb.append('}');
+      return sb.toString();
     }
   }
 
