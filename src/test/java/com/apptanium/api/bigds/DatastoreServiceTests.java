@@ -285,6 +285,29 @@ public class DatastoreServiceTests {
   }
 
   @Test
+  public void entityPropertyBooleanTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("isGood", QueryFilter.Operator.EQUAL, Boolean.TRUE);
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("EQUAL boolean result entity = " + entity);
+      assert entity.get("isGood").equals(Boolean.TRUE);
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 50;
+  }
+
+  @Test
   public void entityCompositeOrTest() throws IOException {
     DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
 
