@@ -7,9 +7,10 @@ import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Table;
-import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -41,11 +42,10 @@ public class CompiledQuery implements DatastoreConstants {
       QueryFilter.CompositeOperator operator = compositeFilter.getOperator();
       switch (operator) {
         case AND:
-
-          break;
+          return getResultsForAndCompositeFilter(compositeFilter);
 
         case OR:
-          break;
+          return getResultsForOrCompositeFilter(compositeFilter);
       }
     }
     else if(filter instanceof PropertyFilter) {
@@ -55,8 +55,100 @@ public class CompiledQuery implements DatastoreConstants {
     return null;
   }
 
+  private QueryResults getResultsForAndCompositeFilter(CompositeFilter compositeFilter) throws IOException {
+    List<PropertyFilter> filters = compositeFilter.getFilters();
+    if(filters.size() == 0) {
+      throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "AND composite filter must have at least 2 property filters");
+    }
+    if(filters.size() == 1) {
+      return getResultsForPropertyFilter(filters.get(0));
+    }
+    String rangeProperty = null;
+    List<Scan> rangeFilters = new ArrayList<>();
+    List<List<Scan>> inListFilters = new ArrayList<>();
+    List<Scan> scans = new ArrayList<>();
+    Table indexTable = connection.getTable(indexesTableName);
+    //todo: complete logic for AND filtering
+    for (PropertyFilter filter : filters) {
+      Scan[] scanArray = getScanFromPropertyFilter(filter);
+      switch (filter.getOperator()) {
+        case IN:
+          break;
+
+        case EQUAL:
+          scans.add(scanArray[0]);
+          break;
+
+        default:
+          break;
+      }
+
+    }
+    return new CompositeAndFilterResults(datastoreService, query, scans, indexTable);
+  }
+
+  private QueryResults getResultsForOrCompositeFilter(CompositeFilter compositeFilter) throws IOException {
+    List<PropertyFilter> filters = compositeFilter.getFilters();
+    if(filters.size() == 0) {
+      throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "AND composite filter must have at least 2 property filters");
+    }
+    if(filters.size() == 1) {
+      return getResultsForPropertyFilter(filters.get(0));
+    }
+    else {
+      List<Scan> listOfScans = new ArrayList<>();
+      for (PropertyFilter filter : filters) {
+        Scan[] scans = getScanFromPropertyFilter(filter);
+        Collections.addAll(listOfScans, scans);
+      }
+      return new CompositeOrFilterResults(datastoreService,
+                                          query,
+                                          listOfScans.toArray(new Scan[listOfScans.size()]),
+                                          connection,
+                                          indexesTableName);
+    }
+  }
+
   private QueryResults getResultsForPropertyFilter(PropertyFilter filter) throws IOException {
-    if(!EntityUtils.isApprovedClass(filter.getValue().getClass())) {
+    Table indexTable = null;
+    try {
+      Scan[] scans = getScanFromPropertyFilter(filter);
+
+      if(scans.length == 1) {
+        Scan scan = scans[0];
+        if (query.getLimit() > 0 && query.getLimit() < 1000) {
+          scan.setMaxResultSize(query.getLimit());
+        }
+        else {
+          scan.setMaxResultSize(100);
+        }
+        if (query.getOffset() > 0) {
+          scan.setRowOffsetPerColumnFamily(query.getOffset());
+        }
+        indexTable = connection.getTable(indexesTableName);
+        ResultScanner resultScanner = indexTable.getScanner(scan);
+        return new PropertyFilterResults(datastoreService, query, resultScanner);
+      }
+      else {
+        return new CompositeOrFilterResults(datastoreService, query, scans, connection, indexesTableName);
+      }
+
+    }
+    finally {
+      if (indexTable != null) {
+        indexTable.close();
+      }
+    }
+  }
+
+
+  private Scan[] getScanFromPropertyFilter(PropertyFilter filter) throws IOException {
+    if(filter.getOperator() == QueryFilter.Operator.IN) {
+      if(!List.class.isAssignableFrom(filter.getValue().getClass())) {
+        throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "'IN' operator requires a list of supported values as filter operand");
+      }
+    }
+    else if(!EntityUtils.isApprovedClass(filter.getValue().getClass())) {
       throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "class " + filter.getValue().getClass().getName() + " is not supported in the data store");
     }
     ValueConverter valueConverter = null;
@@ -71,7 +163,6 @@ public class CompiledQuery implements DatastoreConstants {
       throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "class " + filter.getValue().getClass().getName() + " is not indexable");
     }
     String propertyName = filter.getPropertyName();
-    Table indexTable = connection.getTable(indexesTableName);
     Scan scan = new Scan();
     scan.addFamily(ID_COLUMN_FAMILY_BYTES);
 
@@ -81,65 +172,66 @@ public class CompiledQuery implements DatastoreConstants {
         scan.setRowPrefixFilter(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
         break;
 
-      case GREATER_THAN:
-        scan.setStartRow(Bytes.padTail(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()), 1));
+      case GREATER_THAN: {
+        byte[] startValue = valueConverter.convertToRowPrefixId(propertyName, filter.getValue());
+        startValue[startValue.length - 1] = (byte)((int)startValue[startValue.length-1] + 1);
+        scan.setStartRow(startValue);
+        scan.setStopRow((propertyName + ">").getBytes(CHARSET));
         break;
+      }
 
       case GREATER_THAN_OR_EQUAL:
+        //start row is inclusive by default
         scan.setStartRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
+        scan.setStopRow((propertyName + ">").getBytes(CHARSET));
         break;
 
-      case IN:
-/*
-        FilterList inFilterList = new FilterList(FilterList.Operator.MUST_PASS_ONE);
-        List list = (List) filter.getValue();
-        byte[][] prefixes = new byte[list.size()][];
-        for (int i = 0; i < list.size(); i++) {
-          Object val = list.get(i);
-          prefixes[i] = valueConverter.convertToRowPrefixId(propertyName, val);
-          inFilterList.addFilter(new RowFilter(CompareFilter.CompareOp.EQUAL, new ByteArrayComparable() {
-            @Override
-            public byte[] toByteArray() {
-              return new byte[0];
-            }
-
-            @Override
-            public int compareTo(byte[] value, int offset, int length) {
-              return 0;
-            }
-          }));
+      case IN: {
+        List valueList = (List) filter.getValue();
+        Scan[] scanList = new Scan[valueList.size()];
+        int i = 0;
+        for (Object value : valueList) {
+          Scan currScan = new Scan();
+          currScan.addFamily(ID_COLUMN_FAMILY_BYTES);
+          currScan.setRowPrefixFilter(valueConverter.convertToRowPrefixId(propertyName, value));
+          scanList[i] = currScan;
+          i++;
         }
-        scan.setFilter(inFilterList);
-        break;
-*/
-        throw new RuntimeException("in operator not implemented yet");
+        return scanList;
+      }
 
       case LESS_THAN:
+        //stop row is exclusive by default
         scan.setStopRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
+        scan.setStartRow((propertyName + "<").getBytes(CHARSET));
         break;
 
-      case LESS_THAN_OR_EQUAL:
-        scan.setStopRow(Bytes.padTail(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()), 1));
+      case LESS_THAN_OR_EQUAL: {
+        scan.setStartRow((propertyName + "=").getBytes(CHARSET));
+        byte[] stopValue = valueConverter.convertToRowPrefixId(propertyName, filter.getValue());
+        stopValue[stopValue.length - 1] = (byte) ((int) stopValue[stopValue.length - 1] +1);
+        scan.setStopRow(stopValue);
         break;
+      }
 
-      case NOT_EQUAL:
-/*
-        ColumnPrefixFilter columnPrefixFilter = new ColumnPrefixFilter(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
-        columnPrefixFilter.set
-*/
-        throw new RuntimeException("not equal operator not implemented yet");
-    }
+      case NOT_EQUAL: {
+        Scan[] scanList = new Scan[2];
+        //exclusively less than
+        scanList[0] = new Scan(scan);
+        scanList[0].setStartRow((propertyName + "=").getBytes(CHARSET)); //inclusive
+        scanList[0].setStopRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue())); //exclusive
 
-    if(query.getLimit() > 0 && query.getLimit() < 1000) {
-      scan.setMaxResultSize(query.getLimit());
+        //exclusively greater than
+        scanList[1] = new Scan(scan);
+        byte[] upperBoundStart = valueConverter.convertToRowPrefixId(propertyName, filter.getValue());
+        upperBoundStart[upperBoundStart.length - 1] = (byte)((int)upperBoundStart[upperBoundStart.length-1] + 1);
+        scanList[1].setStartRow(upperBoundStart);
+        scanList[1].setStopRow((propertyName + ">").getBytes(CHARSET));
+        return scanList;
+      }
+
     }
-    else {
-      scan.setMaxResultSize(100);
-    }
-    if(query.getOffset() > 0) {
-      scan.setRowOffsetPerColumnFamily(query.getOffset());
-    }
-    ResultScanner resultScanner = indexTable.getScanner(scan);
-    return new QueryResults(datastoreService, query, resultScanner);
+    return new Scan[]{scan};
+
   }
 }

@@ -27,4 +27,11 @@ class DatastoreUtils implements DatastoreConstants {
     }
     return entity;
   }
+
+  static Key createKeyFromIndexRow(Result result, String kind) {
+    byte[] parentBytes = result.getValue(ID_COLUMN_FAMILY_BYTES, ID_COLUMN_PARENT_BYTES);
+    byte[] keyIdBytes = result.getValue(ID_COLUMN_FAMILY_BYTES, ID_COLUMN_KEY_BYTES);
+    Key parent = parentBytes != null && parentBytes.length > 1 ? Key.createKey(new String(parentBytes, CHARSET), false) : null;
+    return new Key(parent, kind, new String(keyIdBytes, DatastoreConstants.CHARSET));
+  }
 }

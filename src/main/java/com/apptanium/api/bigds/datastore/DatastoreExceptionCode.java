@@ -10,6 +10,7 @@ public enum DatastoreExceptionCode {
   ErrorAdminNotObtained("Could not access admin interface"),
   ErrorPersistingEntity("Could not persist entity"),
   ErrorCreatingTable("Could not create table"),
+  ErrorClosingTable("Could not close table"),
   ErrorRetrievingEntity("Could not retrieve entity"),
   ;
   private final String message;

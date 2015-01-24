@@ -27,4 +27,7 @@ interface DatastoreConstants {
 
   static final String ID_COLUMN_KEY = "k";
   static final byte[] ID_COLUMN_KEY_BYTES = ID_COLUMN_KEY.getBytes(CHARSET);
+
+  static final String ID_COLUMN_PARENT = "p";
+  static final byte[] ID_COLUMN_PARENT_BYTES = ID_COLUMN_PARENT.getBytes(CHARSET);
 }

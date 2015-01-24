@@ -13,10 +13,8 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.List;
 
 /**
  * @author sgupta
@@ -113,30 +111,9 @@ public class DatastoreServiceTests {
 
   }
 
-  //todo: create tests for queries
   @Test
-  public void entityPropertyFilterEqualsTest() throws IOException {
+  public void entityPropertyFilterNumberEqualsTest() throws IOException {
     DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
-    String[] firstNames = new String[]{"Saurabh", "Jim", "Tim"};
-    String[] lastNames = new String[]{"Gupta", "Squaa", "Sqee", "Broo"};
-
-    List<Key> keys = new ArrayList<>();
-    for (int i = 0; i < 100; i++) {
-      String id = EntityUtils.generateId();
-      Entity entity = new Entity(new Key(null, "Person", id));
-      entity.put("firstName", firstNames[i%firstNames.length]);
-      entity.put("lastName", lastNames[i%lastNames.length]);
-      entity.put("number", 12300L + i);
-      entity.put("isGood", (i%2==0));
-      entity.put("intro", new Text("this is a very large piece of text that goes on and on and doesn't stop and all that sort of thing"));
-      entity.put("now", new Date(System.currentTimeMillis() + (10000*i)));
-      entity.put("blob", new Blob("BLOB::abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes(Charset.forName("UTF-8"))));
-      entity.put("shortBlob", new ShortBlob("shortblob_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes(Charset.forName("UTF-8"))));
-      entity.put("testkey", entity.getKey());
-
-      Key key = datastoreService.put(entity);
-      keys.add(key);
-    }
 
     QueryFilter numberFilter = new PropertyFilter("number", QueryFilter.Operator.EQUAL, 12335L);
     Query query = new Query(datastoreService.getNamespace(), "Person", null, false, numberFilter);
@@ -145,30 +122,195 @@ public class DatastoreServiceTests {
     while (results.hasNext()) {
       Entity next = results.next();
       System.out.println("numberfilter next.getKey().toString() = " + next.getKey());
-      assert ((Long)next.get("number")).equals(12335L);
+      assert (next.get("number")).equals(12335L);
     }
     results.close();
+  }
 
-    QueryFilter stringFilter = new PropertyFilter("firstName", QueryFilter.Operator.EQUAL, "Saurabh");
-    query = new Query(datastoreService.getNamespace(), "Person", null, false, stringFilter);
-    compiled = datastoreService.compile(query);
-    results = compiled.getResults();
+  @Test
+  public void entityPropertyStringEqualsTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter stringFilter = new PropertyFilter("firstName", QueryFilter.Operator.EQUAL, "Tim");
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, stringFilter);
+    CompiledQuery compiled = datastoreService.compile(query);
+    QueryResults results = compiled.getResults();
     while (results.hasNext()) {
       Entity entity = results.next();
-      System.out.println("stringfilter entity.getKey().toString() = " + entity.getKey());
-      assert entity.get("firstName").equals("Saurabh");
+      System.out.println("stringfilter entity = " + entity);
+      assert entity.get("firstName").equals("Tim");
     }
     results.close();
+  }
 
-    datastoreService.delete(keys);
-/*
-    for (Key key : keys) {
-      datastoreService.delete(key);
+  @Test
+  public void entityPropertyStringInListTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+
+    QueryFilter inListFilter = new PropertyFilter("firstName", QueryFilter.Operator.IN, Arrays.asList("Jim", "Tim"));
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, inListFilter);
+    CompiledQuery inListCompiled = datastoreService.compile(query);
+    QueryResults inListResults = inListCompiled.getResults();
+    int count = 0;
+    while (inListResults.hasNext()) {
+      Entity entity = inListResults.next();
+//        System.out.println("in list filter entity = " + entity);
+      String firstName = (String) entity.get("firstName");
+      assert firstName.equals("Tim") || firstName.equals("Jim");
+      assert !firstName.equals("Saurabh");
+      count++;
     }
-*/
+    inListResults.close();
+    assert count > 10;
+    System.out.println("count = " + count);
+  }
 
-    Entity checkEntity = datastoreService.get(keys.get(0));
-    assert checkEntity == null;
+  @Test
+  public void entityPropertyNumberLessThanTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("number", QueryFilter.Operator.LESS_THAN, 12310L);
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("LESS_THAN result entity = " + entity);
+      assert (Long)entity.get("number") < 12310L;
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 10;
+
+  }
+
+  @Test
+  public void entityPropertyNumberLessThanEqualTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("number", QueryFilter.Operator.LESS_THAN_OR_EQUAL, 12310L);
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("LESS_THAN_OR_EQUAL result entity = " + entity);
+      assert (Long)entity.get("number") <= 12310L;
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 11;
+
+  }
+
+  @Test
+  public void entityPropertyNumberGreaterThanTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("number", QueryFilter.Operator.GREATER_THAN, 12390L);
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("GREATER_THAN result entity = " + entity);
+      assert (Long)entity.get("number") > 12390L;
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 9; //12391 thru 12399 inclusive
+
+  }
+
+  @Test
+  public void entityPropertyNumberGreaterThanEqualTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("number", QueryFilter.Operator.GREATER_THAN_OR_EQUAL, 12390L);
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("GREATER_THAN_OR_EQUAL result entity = " + entity);
+      assert (Long)entity.get("number") >= 12390L;
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 10; //12390 thru 12399 inclusive
+  }
+
+  @Test
+  public void entityPropertyStringNotEqualTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter filter = new PropertyFilter("lastName", QueryFilter.Operator.NOT_EQUAL, "Gupta");
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, filter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if (entity == null) {
+        continue;
+      }
+      System.out.println("NOT_EQUAL string result entity = " + entity);
+      assert !entity.get("lastName").equals("Gupta");
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count == 75; //25 each for Squee Sqaa and Broo
+  }
+
+  @Test
+  public void entityCompositeOrTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+    QueryFilter compositeOrFilter =
+        new CompositeFilter(QueryFilter.CompositeOperator.OR,
+                            Arrays.asList(
+                                new PropertyFilter("lastName", QueryFilter.Operator.IN, Arrays.asList("Squaa", "Broo")),
+                                new PropertyFilter("number", QueryFilter.Operator.GREATER_THAN, 12390L)
+                                         ));
+
+    Query query = new Query(datastoreService.getNamespace(), "Person", null, false, compositeOrFilter);
+    CompiledQuery compiledQuery = datastoreService.compile(query);
+    QueryResults results = compiledQuery.getResults();
+    int count = 0;
+    while (results.hasNext()) {
+      Entity entity = results.next();
+      if(entity == null) {
+        continue;
+      }
+      System.out.println("COMPOSITE OR entity = " + entity);
+      assert entity.get("lastName").equals("Squaa") || entity.get("lastName").equals("Broo") || ((Long) entity.get("number") > 12390L);
+      count++;
+    }
+    results.close();
+    System.out.println("count = " + count);
+    assert count > 10;
   }
 
 

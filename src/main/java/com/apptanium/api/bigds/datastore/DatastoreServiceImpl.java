@@ -133,6 +133,9 @@ class DatastoreServiceImpl implements DatastoreService, DatastoreConstants {
       if(entry.getValue()) {
         indexesToAdd.add(new Put(entry.getKey()).add(ID_COLUMN_FAMILY_BYTES,
                                                      ID_COLUMN_KEY_BYTES,
+                                                     entity.getKey().getId().getBytes(CHARSET)));
+        indexesToAdd.add(new Put(entry.getKey()).add(ID_COLUMN_FAMILY_BYTES,
+                                                     ID_COLUMN_PARENT_BYTES,
                                                      parentBytes));
       }
     }
