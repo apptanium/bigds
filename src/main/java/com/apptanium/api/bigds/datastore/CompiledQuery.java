@@ -183,7 +183,7 @@ public class CompiledQuery implements DatastoreConstants {
       case GREATER_THAN_OR_EQUAL:
         //start row is inclusive by default
         scan.setStartRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
-        scan.setStopRow((propertyName + ">").getBytes(CHARSET));
+        scan.setStopRow((propertyName + ">").getBytes(CHARSET)); // '>' is the byte after '='
         break;
 
       case IN: {
@@ -202,15 +202,15 @@ public class CompiledQuery implements DatastoreConstants {
 
       case LESS_THAN:
         //stop row is exclusive by default
-        scan.setStopRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue()));
-        scan.setStartRow((propertyName + "<").getBytes(CHARSET));
+        scan.setStartRow((propertyName + "=").getBytes(CHARSET)); // start is inclusive, so start from propertyName=
+        scan.setStopRow(valueConverter.convertToRowPrefixId(propertyName, filter.getValue())); //stop is exclusive by default
         break;
 
       case LESS_THAN_OR_EQUAL: {
         scan.setStartRow((propertyName + "=").getBytes(CHARSET));
         byte[] stopValue = valueConverter.convertToRowPrefixId(propertyName, filter.getValue());
         stopValue[stopValue.length - 1] = (byte) ((int) stopValue[stopValue.length - 1] +1);
-        scan.setStopRow(stopValue);
+        scan.setStopRow(stopValue); //stop is exclusive, so stop one byte after the max
         break;
       }
 
