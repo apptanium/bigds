@@ -9,9 +9,7 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Table;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 /**
  * @author sgupta
@@ -57,35 +55,120 @@ public class CompiledQuery implements DatastoreConstants {
 
   private QueryResults getResultsForAndCompositeFilter(CompositeFilter compositeFilter) throws IOException {
     List<PropertyFilter> filters = compositeFilter.getFilters();
-    if(filters.size() == 0) {
+    if (filters.size() == 0) {
       throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "AND composite filter must have at least 2 property filters");
     }
-    if(filters.size() == 1) {
+    if (filters.size() == 1) {
       return getResultsForPropertyFilter(filters.get(0));
     }
     String rangeProperty = null;
-    List<Scan> rangeFilters = new ArrayList<>();
-    List<List<Scan>> inListFilters = new ArrayList<>();
-    List<Scan> scans = new ArrayList<>();
+    List<Scan> rangeScans = new ArrayList<>();
+    List<List<Scan>> inListScans = new ArrayList<>();
+    List<Scan> propertyScans = new ArrayList<>();
     Table indexTable = connection.getTable(indexesTableName);
     //todo: complete logic for AND filtering
+    int ltCount = 0;
+    int gtCount = 0;
+    int neCount = 0;
+    PropertyFilter gtFilter, ltFilter;
+    Scan gtScan = null, ltScan = null;
+    List<List<Scan>> dnfScans = null;
     for (PropertyFilter filter : filters) {
       Scan[] scanArray = getScanFromPropertyFilter(filter);
       switch (filter.getOperator()) {
         case IN:
+          inListScans.add(Arrays.asList(scanArray));
           break;
 
         case EQUAL:
-          scans.add(scanArray[0]);
+          propertyScans.add(scanArray[0]);
           break;
 
-        default:
+        default: {
+          if (rangeProperty == null) {
+            rangeProperty = filter.getPropertyName();
+          }
+          else {
+            if (!rangeProperty.equals(filter.getPropertyName())) {
+              throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "Only one range property is allowed");
+            }
+          }
+
+          if (filter.getOperator() == QueryFilter.Operator.GREATER_THAN ||
+              filter.getOperator() == QueryFilter.Operator.GREATER_THAN_OR_EQUAL) {
+            gtFilter = filter;
+            gtCount++;
+            gtScan = scanArray[0];
+          }
+          else if (filter.getOperator() == QueryFilter.Operator.LESS_THAN ||
+                   filter.getOperator() == QueryFilter.Operator.LESS_THAN_OR_EQUAL) {
+            ltFilter = filter;
+            ltCount++;
+            ltScan = scanArray[0];
+          }
+          else if (filter.getOperator() == QueryFilter.Operator.NOT_EQUAL) {
+            neCount++;
+          }
+
+          //Validate counts
+          if (gtCount > 1 || ltCount > 1 || neCount > 1) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "Range directions cannot be duplicated");
+          }
+
+          //validate mix of ne and gt/lt scans
+          if (neCount > 0 && (gtCount > 0 || ltCount > 0)) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "NOT_EQUALS cannot be mixed with GT or LT operators");
+          }
+          rangeScans.addAll(Arrays.asList(scanArray));
           break;
+        }
+      }
+      if (gtScan != null && ltScan != null) {
+        Scan collapsedScan = new Scan();
+        collapsedScan.addFamily(ID_COLUMN_FAMILY_BYTES);
+        collapsedScan.setStartRow(gtScan.getStartRow());
+        collapsedScan.setStopRow(ltScan.getStopRow());
+        rangeScans.clear(); //remove old scans
+        rangeScans.add(collapsedScan); //put only the collapsed scan as a range scan
       }
 
+
+      dnfScans = new ArrayList<>();
+      buildInListMatrix(inListScans, new Stack<Scan>(), 0, dnfScans);
+      if (dnfScans.size() == 0) {
+        dnfScans.add(propertyScans);
+      }
+      else {
+        for (List<Scan> dnfScan : dnfScans) {
+          dnfScan.addAll(propertyScans);
+        }
+      }
+
+
     }
-    return new CompositeAndFilterResults(datastoreService, query, scans, indexTable);
+    return new CompositeAndFilterResults(datastoreService, query, dnfScans, rangeScans, indexTable);
   }
+
+  private void buildInListMatrix(List<List<Scan>> inListScans, Stack<Scan> stack, int index, List<List<Scan>> matrix) {
+    if(index == inListScans.size()) {
+      return;
+    }
+    List<Scan> list = inListScans.get(index);
+    for (Scan scan : list) {
+      if(index + 1 < inListScans.size()) {
+        stack.push(scan);
+        buildInListMatrix(inListScans, stack, index + 1, matrix);
+        stack.pop();
+      }
+      else {
+        List<Scan> row = new ArrayList<>();
+        row.addAll(stack);
+        row.add(scan);
+        matrix.add(row);
+      }
+    }
+  }
+
 
   private QueryResults getResultsForOrCompositeFilter(CompositeFilter compositeFilter) throws IOException {
     List<PropertyFilter> filters = compositeFilter.getFilters();
