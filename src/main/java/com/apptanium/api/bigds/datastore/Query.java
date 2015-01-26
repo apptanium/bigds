@@ -32,6 +32,7 @@ public class Query {
     return kind;
   }
 
+  //todo: make keys only queries return entities with keys only, not the full object
   public boolean isKeysOnly() {
     return keysOnly;
   }
