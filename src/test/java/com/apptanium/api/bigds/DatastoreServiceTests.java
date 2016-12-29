@@ -336,6 +336,12 @@ public class DatastoreServiceTests {
     assert count > 10;
   }
 
+  @Test
+  public void entityCompositeAndTest() throws IOException {
+    DatastoreService datastoreService = DatastoreServiceFactory.getInstance().getDatastoreService();
+
+
+  }
 
 
 }

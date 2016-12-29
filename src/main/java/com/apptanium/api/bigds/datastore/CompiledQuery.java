@@ -53,6 +53,98 @@ public class CompiledQuery implements DatastoreConstants {
     return null;
   }
 
+  private final class InequalityScanStatus {
+    private final Scan[] ltScan;
+    private final Scan[] gtScan;
+    private final Scan[] neScans;
+    private final boolean isError;
+
+    private InequalityScanStatus(Scan[] ltScan, Scan[] gtScan, Scan[] neScans, boolean isError) {
+      this.ltScan = ltScan;
+      this.gtScan = gtScan;
+      this.neScans = neScans;
+      this.isError = isError;
+    }
+  }
+
+  private InequalityScanStatus getInequalityScans(List<PropertyFilter> filters) {
+    int ltCount = 0; String ltField = null; Scan[] ltScan = null;
+    int gtCount = 0; String gtField = null; Scan[] gtScan = null;
+    int neCount = 0; String neField = null; Scan[] neScans = null;
+
+    for (PropertyFilter filter : filters) {
+      switch (filter.getOperator()) {
+        case GREATER_THAN:
+        case GREATER_THAN_OR_EQUAL:
+          gtCount++;
+          if(gtField == null) {
+            gtField = filter.getPropertyName();
+          }
+          try {
+            gtScan = getScanFromPropertyFilter(filter);
+          }
+          catch (IOException e) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, e);
+          }
+          break;
+
+        case LESS_THAN:
+        case LESS_THAN_OR_EQUAL:
+          ltCount++;
+          if(ltField == null) {
+            ltField = filter.getPropertyName();
+          }
+          try {
+            ltScan = getScanFromPropertyFilter(filter);
+          }
+          catch (IOException e) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, e);
+          }
+          break;
+
+        case NOT_EQUAL:
+          neCount++;
+          neField = filter.getPropertyName();
+          try {
+            neScans = getScanFromPropertyFilter(filter);
+          }
+          catch (IOException e) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, e);
+          }
+          break;
+      }
+    }
+
+    if(ltCount > 1 || gtCount > 1 || neCount > 1) {
+      return new InequalityScanStatus(ltScan, gtScan, null, true);
+    }
+
+    if(neCount == 1) {
+      if(gtCount > 0 || ltCount > 0) {
+        return new InequalityScanStatus(ltScan, gtScan, null, true);
+      }
+      return new InequalityScanStatus(ltScan, gtScan, neScans, false);
+    }
+
+    if(ltCount == 1 && gtCount == 1) {
+      if(ltField.equals(gtField)) {
+        return new InequalityScanStatus(ltScan, gtScan, null, false);
+      }
+      return new InequalityScanStatus(null, null, null, true);
+    }
+
+    if(ltCount == 1) {
+      return new InequalityScanStatus(ltScan, null, null, false);
+    }
+
+    if(gtCount == 1) {
+      return new InequalityScanStatus(null, gtScan, gtScan, false);
+    }
+
+    //no error, and no inequality scans
+    return new InequalityScanStatus(null, null, null, false);
+  }
+
   private QueryResults getResultsForAndCompositeFilter(CompositeFilter compositeFilter) throws IOException {
     List<PropertyFilter> filters = compositeFilter.getFilters();
     if (filters.size() == 0) {
@@ -66,13 +158,30 @@ public class CompiledQuery implements DatastoreConstants {
     List<List<Scan>> inListScans = new ArrayList<>();
     List<Scan> propertyScans = new ArrayList<>();
     Table indexTable = connection.getTable(indexesTableName);
-    //todo: complete logic for AND filtering
-    int ltCount = 0;
-    int gtCount = 0;
-    int neCount = 0;
-    PropertyFilter gtFilter, ltFilter;
-    Scan gtScan = null, ltScan = null;
-    List<List<Scan>> dnfScans = null;
+
+    InequalityScanStatus iss = getInequalityScans(filters);
+    if(!iss.isError) {
+      if(iss.neScans != null) {
+        rangeScans.add(iss.neScans[0]);
+        rangeScans.add(iss.neScans[1]);
+      }
+      else if (iss.gtScan != null && iss.ltScan != null) {
+        Scan collapsedScan = new Scan();
+        collapsedScan.addFamily(ID_COLUMN_FAMILY_BYTES);
+        collapsedScan.setStartRow(iss.gtScan[0].getStartRow());
+        collapsedScan.setStopRow(iss.ltScan[0].getStopRow());
+        rangeScans.add(collapsedScan); //put only the collapsed scan as a range scan
+      }
+      else if(iss.gtScan != null) {
+        rangeScans.add(iss.gtScan[0]);
+      }
+      else if(iss.ltScan != null) {
+        rangeScans.add(iss.ltScan[0]);
+      }
+    }
+
+    List<List<Scan>> dnfScans = new ArrayList<>();
+
     for (PropertyFilter filter : filters) {
       Scan[] scanArray = getScanFromPropertyFilter(filter);
       switch (filter.getOperator()) {
@@ -84,68 +193,19 @@ public class CompiledQuery implements DatastoreConstants {
           propertyScans.add(scanArray[0]);
           break;
 
-        default: {
-          if (rangeProperty == null) {
-            rangeProperty = filter.getPropertyName();
-          }
-          else {
-            if (!rangeProperty.equals(filter.getPropertyName())) {
-              throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "Only one range property is allowed");
-            }
-          }
-
-          if (filter.getOperator() == QueryFilter.Operator.GREATER_THAN ||
-              filter.getOperator() == QueryFilter.Operator.GREATER_THAN_OR_EQUAL) {
-            gtFilter = filter;
-            gtCount++;
-            gtScan = scanArray[0];
-          }
-          else if (filter.getOperator() == QueryFilter.Operator.LESS_THAN ||
-                   filter.getOperator() == QueryFilter.Operator.LESS_THAN_OR_EQUAL) {
-            ltFilter = filter;
-            ltCount++;
-            ltScan = scanArray[0];
-          }
-          else if (filter.getOperator() == QueryFilter.Operator.NOT_EQUAL) {
-            neCount++;
-          }
-
-          //Validate counts
-          if (gtCount > 1 || ltCount > 1 || neCount > 1) {
-            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "Range directions cannot be duplicated");
-          }
-
-          //validate mix of ne and gt/lt scans
-          if (neCount > 0 && (gtCount > 0 || ltCount > 0)) {
-            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "NOT_EQUALS cannot be mixed with GT or LT operators");
-          }
-          rangeScans.addAll(Arrays.asList(scanArray));
-          break;
-        }
       }
-      if (gtScan != null && ltScan != null) {
-        Scan collapsedScan = new Scan();
-        collapsedScan.addFamily(ID_COLUMN_FAMILY_BYTES);
-        collapsedScan.setStartRow(gtScan.getStartRow());
-        collapsedScan.setStopRow(ltScan.getStopRow());
-        rangeScans.clear(); //remove old scans
-        rangeScans.add(collapsedScan); //put only the collapsed scan as a range scan
-      }
-
-
-      dnfScans = new ArrayList<>();
-      buildInListMatrix(inListScans, new Stack<Scan>(), 0, dnfScans);
-      if (dnfScans.size() == 0) {
-        dnfScans.add(propertyScans);
-      }
-      else {
-        for (List<Scan> dnfScan : dnfScans) {
-          dnfScan.addAll(propertyScans);
-        }
-      }
-
-
     }
+
+    buildInListMatrix(inListScans, new Stack<Scan>(), 0, dnfScans);
+    if (dnfScans.size() == 0) {
+      dnfScans.add(propertyScans);
+    }
+    else {
+      for (List<Scan> dnfScan : dnfScans) {
+        dnfScan.addAll(propertyScans);
+      }
+    }
+
     return new CompositeAndFilterResults(datastoreService, query, dnfScans, rangeScans, indexTable);
   }
 
@@ -182,6 +242,7 @@ public class CompiledQuery implements DatastoreConstants {
       List<Scan> listOfScans = new ArrayList<>();
       for (PropertyFilter filter : filters) {
         Scan[] scans = getScanFromPropertyFilter(filter);
+        //todo: this doesn't check for duplicates; figure out a way to eliminate them
         Collections.addAll(listOfScans, scans);
       }
       return new CompositeOrFilterResults(datastoreService,
@@ -228,7 +289,29 @@ public class CompiledQuery implements DatastoreConstants {
   private Scan[] getScanFromPropertyFilter(PropertyFilter filter) throws IOException {
     if(filter.getOperator() == QueryFilter.Operator.IN) {
       if(!List.class.isAssignableFrom(filter.getValue().getClass())) {
-        throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "'IN' operator requires a list of supported values as filter operand");
+        throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "'IN' operator requires a non zero size list of supported values as filter operand");
+      }
+      else {
+        final List valueList = (List)filter.getValue();
+        if(valueList.size() <= 0 || valueList.size() > 300) {
+          throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "'IN' operator requires a list (1-300 items) of supported values as filter operand");
+        }
+        Class firstClass = null;
+        for (Object val : valueList) {
+          if(val == null) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "'IN' operator values cannot be null");
+          }
+          if(firstClass == null) {
+            firstClass = val.getClass();
+          }
+          else if(!val.getClass().equals(firstClass)) {
+            throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "all values in an IN list must be of the same type");
+          }
+        }
+        Object listValue = valueList.get(0);
+        if(!EntityUtils.isApprovedClass(listValue.getClass())) {
+          throw new DatastoreException(DatastoreExceptionCode.InvalidQueryParameter, "class '"+listValue.getClass()+"' not a supported type for IN list");
+        }
       }
     }
     else if(!EntityUtils.isApprovedClass(filter.getValue().getClass())) {

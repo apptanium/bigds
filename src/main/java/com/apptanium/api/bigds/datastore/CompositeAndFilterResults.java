@@ -35,10 +35,15 @@ public class CompositeAndFilterResults extends QueryResults {
     this.dnfScans = dnfScans;
     this.rangeScans = rangeScans;
     this.indexTable = indexTable;
-    for (Scan rangeScan : rangeScans) {
-      ResultScanner scanner = this.indexTable.getScanner(rangeScan);
-      resultScanners.add(scanner);
-      resultIterators.add(scanner.iterator());
+    if (rangeScans.size() > 0) {
+      for (Scan rangeScan : rangeScans) {
+        ResultScanner scanner = this.indexTable.getScanner(rangeScan);
+        resultScanners.add(scanner);
+        resultIterators.add(scanner.iterator());
+      }
+    }
+    else {
+
     }
     //todo: build set of iterators that control the top iteration cycle
   }
@@ -67,7 +72,10 @@ public class CompositeAndFilterResults extends QueryResults {
 
   @Override
   public void close() {
-
+    for (ResultScanner resultScanner : resultScanners) {
+      resultScanner.close();
+    }
+    //todo: also close all the dnf scans
   }
 
   //todo: implement getCursor() for composite 'AND' filter results
